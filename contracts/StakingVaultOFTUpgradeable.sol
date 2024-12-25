@@ -103,6 +103,7 @@ contract StakingVaultOFTUpgradeable is
 
     function rebase(uint256 _amount) public onlyRole(REBASE_MANAGER_ROLE) nonReentrant {
         if (_amount == 0) revert CannotSetZero();
+        if (totalSupply() == 0) revert NoSharesMinted();
 
         uint256 totalAssetsBefore = totalAssets();
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), _amount);

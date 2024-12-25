@@ -32,6 +32,7 @@ interface IStakingVaultUpgradeable is IERC20 {
     error ZeroAddress();
     error Unauthorized();
     error ZeroAmount();
+    error NoSharesMinted();
 
     // Functions
     function rebase(uint256 _amount) external;
