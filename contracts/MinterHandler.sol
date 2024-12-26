@@ -151,6 +151,10 @@ contract MinterHandler is IMinterHandler, ReentrancyGuard, AccessControl, EIP712
             revert CollateralAlreadyWhitelisted(collateral);
         }
 
+        if (collateral.code.length == 0) {
+            revert NotAnERC20Token(collateral);
+        }
+
         try IERC20Metadata(collateral).decimals() returns (uint8 decimals) {
             if (decimals > 18) {
                 revert InvalidDecimals(collateral, decimals);

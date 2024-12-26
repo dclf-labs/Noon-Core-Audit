@@ -1214,5 +1214,29 @@ describe('MinterHandler', () => {
         )
         .withArgs(user.address, await minterHandler.DEFAULT_ADMIN_ROLE());
     });
+
+    it('should revert when adding non-ERC20 contract as collateral', async () => {
+      // Déployer un contrat mock qui n'est pas un ERC20 (on utilise le MockEIP1271Wallet)
+      const NonERC20Factory =
+        await ethers.getContractFactory('MockEIP1271Wallet');
+      const nonERC20Contract = await NonERC20Factory.deploy(owner.address);
+      await nonERC20Contract.waitForDeployment();
+
+      await expect(
+        minterHandler.addWhitelistedCollateral(
+          await nonERC20Contract.getAddress()
+        )
+      )
+        .to.be.revertedWithCustomError(minterHandler, 'NotAnERC20Token')
+        .withArgs(await nonERC20Contract.getAddress());
+    });
+
+    it('should revert when adding non-contract address as collateral', async () => {
+      const nonContractAddress = ethers.Wallet.createRandom().address;
+
+      await expect(minterHandler.addWhitelistedCollateral(nonContractAddress))
+        .to.be.revertedWithCustomError(minterHandler, 'NotAnERC20Token')
+        .withArgs(nonContractAddress);
+    });
   });
 });
