@@ -1149,7 +1149,6 @@ describe('MinterHandler', () => {
         'New Collateral',
         'NCL'
       );
-      // Attendre que le déploiement soit terminé
       await newCollateral.waitForDeployment();
 
       await expect(
@@ -1183,7 +1182,6 @@ describe('MinterHandler', () => {
         'New Collateral',
         'NCL'
       );
-      // Attendre que le déploiement soit terminé
       await newCollateral.waitForDeployment();
 
       await expect(
@@ -1199,7 +1197,6 @@ describe('MinterHandler', () => {
     });
 
     it('should not allow non-admin to remove whitelisted collateral', async () => {
-      // First add collateral as admin
       const collateralAddress = await mockCollateral.getAddress();
       await minterHandler.addWhitelistedCollateral(collateralAddress);
 
@@ -1216,7 +1213,6 @@ describe('MinterHandler', () => {
     });
 
     it('should revert when adding non-ERC20 contract as collateral', async () => {
-      // Déployer un contrat mock qui n'est pas un ERC20 (on utilise le MockEIP1271Wallet)
       const NonERC20Factory =
         await ethers.getContractFactory('MockEIP1271Wallet');
       const nonERC20Contract = await NonERC20Factory.deploy(owner.address);
