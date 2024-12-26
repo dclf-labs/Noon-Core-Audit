@@ -350,12 +350,25 @@ describe('MinterHandler', () => {
     });
 
     it('should add whitelisted collateral', async () => {
-      const newCollateral = ethers.Wallet.createRandom().address;
-      await expect(minterHandler.addWhitelistedCollateral(newCollateral))
+      const NewCollateralFactory = await ethers.getContractFactory('MockERC20');
+      const newCollateral = await NewCollateralFactory.deploy(
+        'New Collateral',
+        'NCL'
+      );
+      // Attendre que le déploiement soit terminé
+      await newCollateral.waitForDeployment();
+
+      await expect(
+        minterHandler.addWhitelistedCollateral(await newCollateral.getAddress())
+      )
         .to.emit(minterHandler, 'WhitelistedCollateralAdded')
-        .withArgs(newCollateral);
-      expect(await minterHandler.whitelistedCollaterals(newCollateral)).to.be
-        .true;
+        .withArgs(await newCollateral.getAddress());
+
+      expect(
+        await minterHandler.whitelistedCollaterals(
+          await newCollateral.getAddress()
+        )
+      ).to.be.true;
     });
 
     it('should remove whitelisted collateral', async () => {
@@ -560,10 +573,24 @@ describe('MinterHandler', () => {
     });
 
     it('should revert when non-admin tries to add whitelisted collateral', async () => {
-      const newCollateral = ethers.Wallet.createRandom().address;
+      const NewCollateralFactory = await ethers.getContractFactory('MockERC20');
+      const newCollateral = await NewCollateralFactory.deploy(
+        'New Collateral',
+        'NCL'
+      );
+      // Attendre que le déploiement soit terminé
+      await newCollateral.waitForDeployment();
+
       await expect(
-        minterHandler.connect(user).addWhitelistedCollateral(newCollateral)
-      ).to.be.reverted;
+        minterHandler
+          .connect(user)
+          .addWhitelistedCollateral(await newCollateral.getAddress())
+      )
+        .to.be.revertedWithCustomError(
+          minterHandler,
+          'AccessControlUnauthorizedAccount'
+        )
+        .withArgs(user.address, await minterHandler.DEFAULT_ADMIN_ROLE());
     });
 
     it('should revert when non-admin tries to remove whitelisted collateral', async () => {
@@ -1117,12 +1144,25 @@ describe('MinterHandler', () => {
 
   describe('Collateral Management', () => {
     it('should allow DEFAULT_ADMIN_ROLE to add whitelisted collateral', async () => {
-      const newCollateral = ethers.Wallet.createRandom().address;
-      await expect(minterHandler.addWhitelistedCollateral(newCollateral))
+      const NewCollateralFactory = await ethers.getContractFactory('MockERC20');
+      const newCollateral = await NewCollateralFactory.deploy(
+        'New Collateral',
+        'NCL'
+      );
+      // Attendre que le déploiement soit terminé
+      await newCollateral.waitForDeployment();
+
+      await expect(
+        minterHandler.addWhitelistedCollateral(await newCollateral.getAddress())
+      )
         .to.emit(minterHandler, 'WhitelistedCollateralAdded')
-        .withArgs(newCollateral);
-      expect(await minterHandler.whitelistedCollaterals(newCollateral)).to.be
-        .true;
+        .withArgs(await newCollateral.getAddress());
+
+      expect(
+        await minterHandler.whitelistedCollaterals(
+          await newCollateral.getAddress()
+        )
+      ).to.be.true;
     });
 
     it('should allow DEFAULT_ADMIN_ROLE to remove whitelisted collateral', async () => {
@@ -1138,9 +1178,18 @@ describe('MinterHandler', () => {
     });
 
     it('should not allow non-admin to add whitelisted collateral', async () => {
-      const newCollateral = ethers.Wallet.createRandom().address;
+      const NewCollateralFactory = await ethers.getContractFactory('MockERC20');
+      const newCollateral = await NewCollateralFactory.deploy(
+        'New Collateral',
+        'NCL'
+      );
+      // Attendre que le déploiement soit terminé
+      await newCollateral.waitForDeployment();
+
       await expect(
-        minterHandler.connect(user).addWhitelistedCollateral(newCollateral)
+        minterHandler
+          .connect(user)
+          .addWhitelistedCollateral(await newCollateral.getAddress())
       )
         .to.be.revertedWithCustomError(
           minterHandler,

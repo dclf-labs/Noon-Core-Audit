@@ -91,12 +91,12 @@ contract MinterHandler is IMinterHandler, ReentrancyGuard, AccessControl, EIP712
                 difference = normalizedUsnAmount - normalizedCollateralAmount;
             }
 
-            // Calculate 2% of the larger amount
-            uint256 twoPercent = (
+            // Calculate 0.5% of the larger amount
+            uint256 halfPercent = (
                 normalizedCollateralAmount > normalizedUsnAmount ? normalizedCollateralAmount : normalizedUsnAmount
-            ) / 50;
+            ) / 200;
 
-            if (difference > twoPercent) {
+            if (difference > halfPercent) {
                 revert CollateralUsnMismatch(order.collateralAmount, order.usnAmount);
             }
         }
@@ -117,10 +117,9 @@ contract MinterHandler is IMinterHandler, ReentrancyGuard, AccessControl, EIP712
         }
 
         usedNonces[order.user][order.nonce] = true;
-        usnToken.mint(order.user, order.usnAmount);
-        currentBlockMintAmount += order.usnAmount;
-
         _transferCollateral(order.collateralAddress, order.user, order.collateralAmount);
+        currentBlockMintAmount += order.usnAmount;
+        usnToken.mint(order.user, order.usnAmount);
 
         emit Mint(order.user, order.collateralAmount, order.usnAmount, order.collateralAddress);
     }
@@ -151,6 +150,15 @@ contract MinterHandler is IMinterHandler, ReentrancyGuard, AccessControl, EIP712
         if (whitelistedCollaterals[collateral]) {
             revert CollateralAlreadyWhitelisted(collateral);
         }
+
+        try IERC20Metadata(collateral).decimals() returns (uint8 decimals) {
+            if (decimals > 18) {
+                revert InvalidDecimals(collateral, decimals);
+            }
+        } catch {
+            revert NotAnERC20Token(collateral);
+        }
+
         whitelistedCollaterals[collateral] = true;
         emit WhitelistedCollateralAdded(collateral);
     }
