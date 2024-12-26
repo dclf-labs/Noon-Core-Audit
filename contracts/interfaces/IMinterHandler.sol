@@ -24,6 +24,8 @@ interface IMinterHandler {
     error ZeroAddress();
     error ZeroAmount();
     error CollateralUsnMismatch(uint256 collateralAmount, uint256 usnAmount);
+    error NotAnERC20Token(address addr);
+    error InvalidDecimals(address token, uint8 decimals);
 
     // Events
     event Mint(address indexed user, uint256 collateralAmount, uint256 usnAmount, address indexed collateral);

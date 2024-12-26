@@ -351,7 +351,16 @@ describe('USNStakingVault', function () {
       stakeAmount,
       await user1.getAddress()
     );
-
+    // Have user2 deposit as well
+    await StakingVault.connect(user2).deposit(
+      stakeAmount,
+      await user2.getAddress()
+    );
+    // Verify user1 and user2 have different balances
+    const user1Balance = await StakingVault.balanceOf(user1.address);
+    const user2Balance = await StakingVault.balanceOf(user2.address);
+    expect(user1Balance).to.equal(user2Balance);
+    expect(user1.address).to.not.equal(user2.address);
     // Get initial assets
     const assets = await StakingVault.convertToAssets(stakeAmount);
 
@@ -396,7 +405,7 @@ describe('USNStakingVault', function () {
     const vaultUsnBalance = await USN.balanceOf(
       await StakingVault.getAddress()
     );
-    expect(vaultUsnBalance).to.equal(rebaseAmount);
+    expect(vaultUsnBalance).to.equal(rebaseAmount + stakeAmount);
   });
 
   it('should enforce withdraw period', async function () {
@@ -649,8 +658,7 @@ describe('USNStakingVault', function () {
     const finalBalance = await StakingVault.balanceOf(user1.address);
     expect(finalBalance).to.equal(initialBalance + amount);
   });
-
-  it('should allow rebaseWithPermit', async function () {
+  it('should not allow rebase if no shares minted', async function () {
     const amount = ethers.parseUnits('1000', 18);
     const deadline = Math.floor(Date.now() / 1000) + 3600 * 100; // 100 hour from now
     const nonce = await USN.nonces(rebaseManager.address);
@@ -683,7 +691,10 @@ describe('USNStakingVault', function () {
     const signature = await rebaseManager.signTypedData(domain, types, values);
     const { v, r, s } = ethers.Signature.from(signature);
 
-    const initialTotalSupply = await StakingVault.totalSupply();
+    // Verify total supply is 0
+    expect(await StakingVault.totalSupply()).to.equal(0);
+
+    // Attempt rebase should fail
     await expect(
       StakingVault.connect(rebaseManager).rebaseWithPermit(
         amount,
@@ -692,9 +703,60 @@ describe('USNStakingVault', function () {
         r,
         s
       )
-    )
-      .to.emit(StakingVault, 'Rebase')
-      .withArgs(initialTotalSupply + amount);
+    ).to.be.revertedWithCustomError(StakingVault, 'NoSharesMinted');
+  });
+
+  it('should allow rebaseWithPermit', async function () {
+    const amount = ethers.parseUnits('1000', 18);
+    const deadline = Math.floor(Date.now() / 1000) + 3600 * 100; // 100 hour from now
+    const nonce = await USN.nonces(rebaseManager.address);
+    // First stake some USN to have shares minted
+    await StakingVault.connect(user1).deposit(
+      stakeAmount,
+      await user1.getAddress()
+    );
+
+    // Verify shares were minted
+    const shares = await StakingVault.balanceOf(await user1.getAddress());
+    expect(shares).to.equal(stakeAmount);
+    const domain = {
+      name: await USN.name(),
+      version: '1',
+      chainId: (await ethers.provider.getNetwork()).chainId,
+      verifyingContract: await USN.getAddress(),
+    };
+
+    const types = {
+      Permit: [
+        { name: 'owner', type: 'address' },
+        { name: 'spender', type: 'address' },
+        { name: 'value', type: 'uint256' },
+        { name: 'nonce', type: 'uint256' },
+        { name: 'deadline', type: 'uint256' },
+      ],
+    };
+
+    const values = {
+      owner: rebaseManager.address,
+      spender: await StakingVault.getAddress(),
+      value: amount,
+      nonce: nonce,
+      deadline: deadline,
+    };
+
+    const signature = await rebaseManager.signTypedData(domain, types, values);
+    const { v, r, s } = ethers.Signature.from(signature);
+
+    const initialTotalSupply = await StakingVault.totalAssets();
+    await expect(
+      StakingVault.connect(rebaseManager).rebaseWithPermit(
+        amount,
+        deadline,
+        v,
+        r,
+        s
+      )
+    ).to.emit(StakingVault, 'Rebase');
 
     // Shouldn't change the total supply
     const finalTotalSupply = await StakingVault.totalSupply();
