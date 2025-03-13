@@ -8,6 +8,8 @@ interface IStakedUSNBasicOFT {
     error BlacklistedAddress();
 
     function blacklistAccount(address account) external;
+
     function unblacklistAccount(address account) external;
+
     function blacklist(address account) external view returns (bool);
 }

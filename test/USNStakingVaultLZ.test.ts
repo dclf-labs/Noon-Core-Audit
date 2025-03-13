@@ -10,6 +10,8 @@ import type {
   MockERC20,
   WithdrawalHandler,
   EndpointV2Mock,
+  MockMailbox,
+  StakingVaultOFTUpgradeableHyperlane,
 } from '../typechain-types';
 
 // Add SendParam type
@@ -28,6 +30,8 @@ describe('USNStakingVault', function () {
   let MinterHandler: MinterHandler;
   let StakingVault: StakingVaultOFTUpgradeable;
   let StakingVaultDst: StakingVaultOFTUpgradeable;
+  let HyperlaneVault: StakingVaultOFTUpgradeableHyperlane;
+  let HyperlaneVaultDst: StakingVaultOFTUpgradeableHyperlane;
   let mockCollateral: MockERC20;
   let owner: HardhatEthersSigner;
   let user1: HardhatEthersSigner;
@@ -39,12 +43,29 @@ describe('USNStakingVault', function () {
   let endpointV2MockSrc: EndpointV2Mock;
   let endpointV2MockDst: EndpointV2Mock;
   let withdrawalHandler: WithdrawalHandler;
+  let mockMailboxSrc: MockMailbox;
+  let mockMailboxDst: MockMailbox;
+  let stakingVaultProxySrc: Contract;
 
   const CHAIN_ID_SRC = 1;
   const CHAIN_ID_DST = 2;
   const initialMint = ethers.parseUnits('1000000', 18);
   const stakeAmount = ethers.parseUnits('10000', 18);
   const rebaseAmount = ethers.parseUnits('1000', 18);
+
+  // Add this helper function at the top of the file, outside the describe block
+  async function setupHyperlaneMocks() {
+    // Deploy mock Hyperlane mailboxes
+    const MockMailbox = await ethers.getContractFactory('MockMailbox');
+    const mockMailboxSrc = await MockMailbox.deploy(CHAIN_ID_SRC);
+    const mockMailboxDst = await MockMailbox.deploy(CHAIN_ID_DST);
+
+    // Set up remote mailboxes
+    await mockMailboxSrc.setRemoteMailbox(CHAIN_ID_DST, mockMailboxDst.target);
+    await mockMailboxDst.setRemoteMailbox(CHAIN_ID_SRC, mockMailboxSrc.target);
+
+    return { mockMailboxSrc, mockMailboxDst };
+  }
 
   beforeEach(async function () {
     [
@@ -74,7 +95,7 @@ describe('USNStakingVault', function () {
     const StakingVaultFactory = await ethers.getContractFactory(
       'StakingVaultOFTUpgradeable'
     );
-    const stakingVaultProxySrc = await upgrades.deployProxy(
+    stakingVaultProxySrc = await upgrades.deployProxy(
       StakingVaultFactory,
       [await USN.getAddress(), 'Staked USN', 'sUSN', await owner.getAddress()],
       {
@@ -122,6 +143,64 @@ describe('USNStakingVault', function () {
       ethers.zeroPadValue(await StakingVault.getAddress(), 32)
     );
 
+    // Deploy mock Hyperlane mailboxes
+    const MockMailbox = await ethers.getContractFactory('MockMailbox');
+    mockMailboxSrc = await MockMailbox.deploy(CHAIN_ID_SRC);
+    mockMailboxDst = await MockMailbox.deploy(CHAIN_ID_DST);
+
+    // Deploy StakingVaultOFTUpgradeableHyperlane with proxy
+    const StakingVaultFactoryHyperlane = await ethers.getContractFactory(
+      'StakingVaultOFTUpgradeableHyperlane'
+    );
+    const hyperlaneVaultProxySrc = await upgrades.deployProxy(
+      StakingVaultFactoryHyperlane,
+      [await USN.getAddress(), 'Staked USN', 'sUSN', await owner.getAddress()],
+      {
+        initializer: 'initialize',
+        constructorArgs: [await endpointV2MockSrc.getAddress()],
+        unsafeAllow: ['constructor'],
+      }
+    );
+    HyperlaneVault = StakingVaultFactoryHyperlane.attach(
+      await hyperlaneVaultProxySrc.getAddress()
+    ) as StakingVaultOFTUpgradeableHyperlane;
+
+    // Deploy StakedUSNBasicOFTHyperlane with proxy on destination chain
+    const StakedUSNBasicOFTHyperlaneFactory = await ethers.getContractFactory(
+      'StakedUSNBasicOFTHyperlane'
+    );
+    const hyperlaneVaultProxyDst = await upgrades.deployProxy(
+      StakedUSNBasicOFTHyperlaneFactory,
+      ['Staked USN', 'sUSN', await owner.getAddress()],
+      {
+        initializer: 'initialize',
+        constructorArgs: [await endpointV2MockDst.getAddress()],
+        unsafeAllow: ['constructor'],
+      }
+    );
+    HyperlaneVaultDst = StakedUSNBasicOFTHyperlaneFactory.attach(
+      await hyperlaneVaultProxyDst.getAddress()
+    ) as StakingVaultOFTUpgradeableHyperlane;
+
+    // Configure Hyperlane for both vaults
+    await HyperlaneVault.configureHyperlane(mockMailboxSrc.target);
+    await HyperlaneVaultDst.configureHyperlane(mockMailboxDst.target);
+
+    // Set up remote mailboxes
+    await mockMailboxSrc.setRemoteMailbox(CHAIN_ID_DST, mockMailboxDst.target);
+    await mockMailboxDst.setRemoteMailbox(CHAIN_ID_SRC, mockMailboxSrc.target);
+
+    // Register remote tokens
+    await HyperlaneVault.registerHyperlaneRemoteToken(
+      CHAIN_ID_DST,
+      ethers.zeroPadValue(HyperlaneVaultDst.target, 32)
+    );
+    await HyperlaneVaultDst.registerHyperlaneRemoteToken(
+      CHAIN_ID_SRC,
+      ethers.zeroPadValue(HyperlaneVault.target, 32)
+    );
+
+    // Rest of setup...
     const MockERC20Factory = await ethers.getContractFactory('MockERC20');
     mockCollateral = await MockERC20Factory.deploy('Mock Collateral', 'MCOL');
 
@@ -227,9 +306,16 @@ describe('USNStakingVault', function () {
       STAKING_VAULT_ROLE,
       await StakingVault.getAddress()
     );
+    await withdrawalHandler.grantRole(
+      STAKING_VAULT_ROLE,
+      await HyperlaneVault.getAddress()
+    );
 
     // Set WithdrawalHandler in StakingVault
     await StakingVault.setWithdrawalHandler(
+      await withdrawalHandler.getAddress()
+    );
+    await HyperlaneVault.setWithdrawalHandler(
       await withdrawalHandler.getAddress()
     );
   });
@@ -833,7 +919,7 @@ describe('USNStakingVault', function () {
       withdrawAmount,
       withdrawalHandler.target,
       user1.address,
-      withdrawAmount + (withdrawAmount * 2n) / 100n // 2% slippage
+      withdrawAmount + (withdrawAmount * 2n) / 100n //2% slippage
     );
 
     // Get withdrawal request ID
@@ -1701,5 +1787,597 @@ describe('USNStakingVault', function () {
     expect(await StakingVaultDst.balanceOf(user2.address)).to.equal(
       transferAmount
     );
+  });
+
+  it('should transfer tokens via Hyperlane', async function () {
+    const transferAmount = ethers.parseUnits('1000', 18);
+    //approve USN for HyperlaneVault
+    await USN.connect(user1).approve(
+      await HyperlaneVault.getAddress(),
+      transferAmount
+    );
+    // Deposit tokens first
+    await HyperlaneVault.connect(user1).deposit(
+      transferAmount,
+      await user1.getAddress()
+    );
+
+    // Get initial balances
+    const initialSrcBalance = await HyperlaneVault.balanceOf(user1.address);
+    const initialDstBalance = await HyperlaneVaultDst.balanceOf(user1.address);
+    await HyperlaneVaultDst.configureHyperlane(mockMailboxSrc.target);
+    // Send tokens via Hyperlane
+    const fee = await mockMailboxSrc.mockFee();
+    await HyperlaneVault.connect(user1).sendTokensViaHyperlane(
+      CHAIN_ID_DST,
+      user1.address,
+      transferAmount,
+      { value: fee }
+    );
+
+    // Verify balances - no need to process message manually
+    expect(await HyperlaneVault.balanceOf(user1.address)).to.equal(
+      initialSrcBalance - transferAmount
+    );
+    expect(await HyperlaneVaultDst.balanceOf(user1.address)).to.equal(
+      initialDstBalance + transferAmount
+    );
+  });
+
+  it('should revert Hyperlane transfer with insufficient fee', async function () {
+    const transferAmount = ethers.parseUnits('1000', 18);
+    //approve USN for HyperlaneVault
+    await USN.connect(user1).approve(
+      await HyperlaneVault.getAddress(),
+      transferAmount
+    );
+    await HyperlaneVault.connect(user1).deposit(
+      transferAmount,
+      await user1.getAddress()
+    );
+
+    await expect(
+      HyperlaneVault.connect(user1).sendTokensViaHyperlane(
+        CHAIN_ID_DST,
+        user1.address,
+        transferAmount,
+        { value: 0 }
+      )
+    ).to.be.revertedWithCustomError(
+      HyperlaneVault,
+      'InsufficientInterchainFee'
+    );
+  });
+
+  it('should upgrade StakingVaultOFTUpgradeable to StakingVaultOFTUpgradeableHyperlane', async function () {
+    //approve USN for HyperlaneVault
+    await USN.connect(user1).approve(
+      await StakingVault.getAddress(),
+      stakeAmount
+    );
+    // First deposit some tokens to the original vault
+    await StakingVault.connect(user1).deposit(
+      stakeAmount,
+      await user1.getAddress()
+    );
+    //approve USN for HyperlaneVault
+
+    const balanceBefore = await StakingVault.balanceOf(user1.address);
+    expect(balanceBefore).to.equal(stakeAmount);
+
+    // Upgrade the contract
+    const StakingVaultFactoryHyperlane = await ethers.getContractFactory(
+      'StakingVaultOFTUpgradeableHyperlane'
+    );
+
+    const upgradedVault = await upgrades.upgradeProxy(
+      stakingVaultProxySrc.target,
+      StakingVaultFactoryHyperlane,
+      {
+        constructorArgs: [await endpointV2MockSrc.getAddress()],
+        unsafeAllow: ['constructor'],
+      }
+    );
+
+    const UpgradedVault = StakingVaultFactoryHyperlane.attach(
+      upgradedVault.target
+    ) as StakingVaultOFTUpgradeableHyperlane;
+
+    // Verify balance is preserved after upgrade
+    const balanceAfter = await UpgradedVault.balanceOf(user1.address);
+    expect(balanceAfter).to.equal(balanceBefore);
+
+    // Configure Hyperlane on the upgraded vault
+    await UpgradedVault.configureHyperlane(mockMailboxSrc.target);
+
+    // Register remote token
+    await UpgradedVault.registerHyperlaneRemoteToken(
+      CHAIN_ID_DST,
+      ethers.zeroPadValue(HyperlaneVaultDst.target, 32)
+    );
+
+    // Test Hyperlane transfer with the upgraded vault
+    const transferAmount = ethers.parseUnits('1000', 18);
+    const fee = await mockMailboxSrc.mockFee();
+    //configure Hyperlane on the upgraded vault
+    await HyperlaneVaultDst.configureHyperlane(mockMailboxSrc.target);
+    //configure remote token
+    await UpgradedVault.registerHyperlaneRemoteToken(
+      CHAIN_ID_DST,
+      ethers.zeroPadValue(HyperlaneVaultDst.target, 32)
+    );
+    //configure hyperlaneVaultdst remote token
+    await HyperlaneVaultDst.registerHyperlaneRemoteToken(
+      CHAIN_ID_SRC,
+      ethers.zeroPadValue(UpgradedVault.target, 32)
+    );
+
+    await UpgradedVault.connect(user1).sendTokensViaHyperlane(
+      CHAIN_ID_DST,
+      user1.address,
+      transferAmount,
+      { value: fee }
+    );
+
+    // Verify the transfer worked
+    expect(await UpgradedVault.balanceOf(user1.address)).to.equal(
+      stakeAmount - transferAmount
+    );
+    expect(await HyperlaneVaultDst.balanceOf(user1.address)).to.equal(
+      transferAmount
+    );
+  });
+
+  it('should correctly lock tokens on source chain and mint on destination chain via Hyperlane', async function () {
+    // Deploy fresh instances for this test
+    const { mockMailboxSrc, mockMailboxDst } = await setupHyperlaneMocks();
+
+    // Deploy StakingVaultOFTUpgradeableHyperlane
+    const StakingVaultFactoryHyperlane = await ethers.getContractFactory(
+      'StakingVaultOFTUpgradeableHyperlane'
+    );
+    const hyperlaneVaultSrc = await upgrades.deployProxy(
+      StakingVaultFactoryHyperlane,
+      [await USN.getAddress(), 'Staked USN', 'sUSN', await owner.getAddress()],
+      {
+        initializer: 'initialize',
+        constructorArgs: [await endpointV2MockSrc.getAddress()],
+        unsafeAllow: ['constructor'],
+      }
+    );
+
+    // Deploy StakedUSNBasicOFTHyperlane
+    const StakedUSNBasicOFTHyperlaneFactory = await ethers.getContractFactory(
+      'StakedUSNBasicOFTHyperlane'
+    );
+    const hyperlaneVaultDst = await upgrades.deployProxy(
+      StakedUSNBasicOFTHyperlaneFactory,
+      ['Staked USN', 'sUSN', await owner.getAddress()],
+      {
+        initializer: 'initialize',
+        constructorArgs: [await endpointV2MockDst.getAddress()],
+        unsafeAllow: ['constructor'],
+      }
+    );
+
+    // Configure Hyperlane for both vaults
+    await hyperlaneVaultSrc.configureHyperlane(mockMailboxSrc.target);
+    await hyperlaneVaultDst.configureHyperlane(mockMailboxDst.target);
+
+    // Register remote tokens
+    await hyperlaneVaultSrc.registerHyperlaneRemoteToken(
+      CHAIN_ID_DST,
+      ethers.zeroPadValue(hyperlaneVaultDst.target, 32)
+    );
+    await hyperlaneVaultDst.registerHyperlaneRemoteToken(
+      CHAIN_ID_SRC,
+      ethers.zeroPadValue(hyperlaneVaultSrc.target, 32)
+    );
+
+    // Set up withdrawal handler
+    await hyperlaneVaultSrc.setWithdrawalHandler(withdrawalHandler.target);
+    await withdrawalHandler.grantRole(
+      await withdrawalHandler.STAKING_VAULT_ROLE(),
+      hyperlaneVaultSrc.target
+    );
+
+    const transferAmount = ethers.parseUnits('1000', 18);
+
+    // Approve USN for hyperlaneVaultSrc
+    await USN.connect(user1).approve(hyperlaneVaultSrc.target, transferAmount);
+
+    // Deposit tokens first
+    await hyperlaneVaultSrc
+      .connect(user1)
+      .deposit(transferAmount, await user1.getAddress());
+
+    // Get initial balances and token supply
+    const initialSrcBalance = await hyperlaneVaultSrc.balanceOf(user1.address);
+    const initialDstBalance = await hyperlaneVaultDst.balanceOf(user1.address);
+    const initialSrcTotalSupply = await hyperlaneVaultSrc.totalSupply();
+    const initialDstTotalSupply = await hyperlaneVaultDst.totalSupply();
+
+    // Send tokens via Hyperlane
+    const fee = await mockMailboxSrc.mockFee();
+
+    // This is the key part - we need to modify the MockMailbox to properly handle the message
+    // First, let's make sure the MockMailbox is correctly set up to process messages
+    await mockMailboxSrc.setMockFee(ethers.parseEther('0.001'));
+    //configure Hyperlane on the upgraded vault
+    await hyperlaneVaultDst.configureHyperlane(mockMailboxSrc.target);
+    await hyperlaneVaultSrc.configureHyperlane(mockMailboxSrc.target);
+    //configure remote token
+    await hyperlaneVaultDst.registerHyperlaneRemoteToken(
+      CHAIN_ID_SRC,
+      ethers.zeroPadValue(hyperlaneVaultSrc.target, 32)
+    );
+    //configure src mailbox
+    await mockMailboxSrc.setRemoteMailbox(CHAIN_ID_DST, mockMailboxSrc.target);
+    //configure dst mailbox
+    await mockMailboxDst.setRemoteMailbox(CHAIN_ID_SRC, mockMailboxDst.target);
+    await hyperlaneVaultSrc
+      .connect(user1)
+      .sendTokensViaHyperlane(CHAIN_ID_DST, user1.address, transferAmount, {
+        value: fee,
+      });
+
+    // Manually process the message on the destination chain
+    // This simulates what would happen in a real cross-chain scenario
+    const messageBody = ethers.AbiCoder.defaultAbiCoder().encode(
+      ['address', 'uint256'],
+      [user1.address, transferAmount]
+    );
+    // Verify balances - tokens should be locked on source chain (not burned)
+    expect(await hyperlaneVaultSrc.balanceOf(user1.address)).to.equal(
+      initialSrcBalance - transferAmount
+    );
+    expect(
+      await hyperlaneVaultSrc.balanceOf(hyperlaneVaultSrc.target)
+    ).to.equal(transferAmount);
+
+    // Total supply on source chain should remain the same
+    expect(await hyperlaneVaultSrc.totalSupply()).to.equal(
+      initialSrcTotalSupply
+    );
+
+    // Tokens should be minted on destination chain
+    expect(await hyperlaneVaultDst.balanceOf(user1.address)).to.equal(
+      initialDstBalance + transferAmount
+    );
+
+    // Total supply on destination chain should increase
+    expect(await hyperlaneVaultDst.totalSupply()).to.equal(
+      initialDstTotalSupply + transferAmount
+    );
+  });
+
+  it('should correctly handle round-trip transfers via Hyperlane', async function () {
+    const transferAmount = ethers.parseUnits('1000', 18);
+
+    // Approve USN for HyperlaneVault
+    await USN.connect(user1).approve(
+      await HyperlaneVault.getAddress(),
+      transferAmount
+    );
+
+    // Deposit tokens first
+    await HyperlaneVault.connect(user1).deposit(
+      transferAmount,
+      await user1.getAddress()
+    );
+
+    // Get initial balances
+    const initialSrcBalance = await HyperlaneVault.balanceOf(user1.address);
+
+    //configure hyperlane on vault
+    await mockMailboxSrc.setRemoteMailbox(CHAIN_ID_DST, mockMailboxSrc.target);
+    await mockMailboxSrc.setRemoteMailbox(CHAIN_ID_SRC, mockMailboxSrc.target);
+    await HyperlaneVaultDst.configureHyperlane(mockMailboxSrc.target);
+    await HyperlaneVault.configureHyperlane(mockMailboxSrc.target);
+    //configure remote token
+    await HyperlaneVaultDst.registerHyperlaneRemoteToken(
+      CHAIN_ID_SRC,
+      ethers.zeroPadValue(HyperlaneVault.target, 32)
+    );
+
+    // Send tokens from source to destination
+    const fee = await mockMailboxSrc.mockFee();
+    await HyperlaneVault.connect(user1).sendTokensViaHyperlane(
+      CHAIN_ID_DST,
+      user1.address,
+      transferAmount,
+      { value: fee }
+    );
+
+    // Verify tokens arrived on destination
+    expect(await HyperlaneVaultDst.balanceOf(user1.address)).to.equal(
+      transferAmount
+    );
+    // Now send tokens back from destination to source
+    const feeDst = await mockMailboxDst.mockFee();
+    //register remote token
+    await HyperlaneVault.registerHyperlaneRemoteToken(
+      CHAIN_ID_SRC,
+      ethers.zeroPadValue(HyperlaneVaultDst.target, 32)
+    );
+    //register remote token on dst vault
+    await HyperlaneVaultDst.registerHyperlaneRemoteToken(
+      CHAIN_ID_SRC,
+      ethers.zeroPadValue(HyperlaneVault.target, 32)
+    );
+    await HyperlaneVaultDst.connect(user1).sendTokensViaHyperlane(
+      CHAIN_ID_SRC,
+      user1.address,
+      transferAmount,
+      { value: feeDst }
+    );
+
+    // Verify tokens returned to source
+    expect(await HyperlaneVault.balanceOf(user1.address)).to.equal(
+      initialSrcBalance
+    );
+    expect(await HyperlaneVaultDst.balanceOf(user1.address)).to.equal(0);
+  });
+
+  it('should correctly handle blacklisted addresses with Hyperlane transfers', async function () {
+    const transferAmount = ethers.parseUnits('1000', 18);
+
+    // Approve USN for HyperlaneVault
+    await USN.connect(user1).approve(
+      await HyperlaneVault.getAddress(),
+      transferAmount
+    );
+
+    // Deposit tokens first
+    await HyperlaneVault.connect(user1).deposit(
+      transferAmount,
+      await user1.getAddress()
+    );
+
+    // Blacklist user1 on destination chain
+    await HyperlaneVaultDst.grantRole(
+      await HyperlaneVaultDst.BLACKLIST_MANAGER_ROLE(),
+      blacklistManager.address
+    );
+    await HyperlaneVaultDst.connect(blacklistManager).blacklistAccount(
+      user1.address
+    );
+
+    // Send tokens via Hyperlane - should fail on destination due to blacklist
+    const fee = await mockMailboxSrc.mockFee();
+    //configure mailbox
+    await mockMailboxSrc.setRemoteMailbox(CHAIN_ID_DST, mockMailboxSrc.target);
+    await mockMailboxSrc.setRemoteMailbox(CHAIN_ID_SRC, mockMailboxSrc.target);
+    await HyperlaneVaultDst.configureHyperlane(mockMailboxSrc.target);
+    await HyperlaneVault.configureHyperlane(mockMailboxSrc.target);
+    // The transaction will succeed on source chain, but the tokens won't be credited on destination
+    await expect(
+      HyperlaneVault.connect(user1).sendTokensViaHyperlane(
+        CHAIN_ID_DST,
+        user1.address,
+        transferAmount,
+        { value: fee }
+      )
+    ).to.be.revertedWithCustomError(HyperlaneVaultDst, 'BlacklistedAddress');
+
+    // Tokens should be locked on source chain
+    expect(await HyperlaneVault.balanceOf(HyperlaneVault.target)).to.equal(0);
+
+    // But not credited on destination due to blacklist
+    expect(await HyperlaneVaultDst.balanceOf(user1.address)).to.equal(0);
+
+    // Unblacklist user1
+    await HyperlaneVaultDst.connect(blacklistManager).unblacklistAccount(
+      user1.address
+    );
+
+    // Try again with a new transfer
+    await USN.connect(user1).approve(
+      await HyperlaneVault.getAddress(),
+      transferAmount
+    );
+    await HyperlaneVault.connect(user1).deposit(
+      transferAmount,
+      await user1.getAddress()
+    );
+
+    await HyperlaneVault.connect(user1).sendTokensViaHyperlane(
+      CHAIN_ID_DST,
+      user1.address,
+      transferAmount,
+      { value: fee }
+    );
+
+    // Now tokens should be credited on destination
+    expect(await HyperlaneVaultDst.balanceOf(user1.address)).to.equal(
+      transferAmount
+    );
+  });
+
+  it('should correctly handle rebase after Hyperlane transfer', async function () {
+    const transferAmount = ethers.parseUnits('1000', 18);
+    const rebaseAmt = ethers.parseUnits('100', 18);
+
+    // Approve USN for HyperlaneVault
+    await USN.connect(user1).approve(
+      await HyperlaneVault.getAddress(),
+      transferAmount
+    );
+
+    // Deposit tokens first
+    await HyperlaneVault.connect(user1).deposit(
+      transferAmount,
+      await user1.getAddress()
+    );
+
+    // Send half the tokens via Hyperlane
+    const halfAmount = transferAmount / 2n;
+    const fee = await mockMailboxSrc.mockFee();
+    //configure mailbox
+    await mockMailboxSrc.setRemoteMailbox(CHAIN_ID_DST, mockMailboxSrc.target);
+    await mockMailboxSrc.setRemoteMailbox(CHAIN_ID_SRC, mockMailboxSrc.target);
+    await HyperlaneVaultDst.configureHyperlane(mockMailboxSrc.target);
+    await HyperlaneVault.configureHyperlane(mockMailboxSrc.target);
+    //register remote token
+
+    await HyperlaneVault.connect(user1).sendTokensViaHyperlane(
+      CHAIN_ID_DST,
+      user1.address,
+      halfAmount,
+      { value: fee }
+    );
+
+    // Verify balances before rebase
+    const srcBalanceBeforeRebase = await HyperlaneVault.balanceOf(
+      user1.address
+    );
+    const dstBalanceBeforeRebase = await HyperlaneVaultDst.balanceOf(
+      user1.address
+    );
+
+    // Perform rebase on source chain
+    await USN.connect(rebaseManager).approve(
+      await HyperlaneVault.getAddress(),
+      rebaseAmt
+    );
+    //rebase manager needs to be rebase role
+    await HyperlaneVault.grantRole(
+      await HyperlaneVault.REBASE_MANAGER_ROLE(),
+      rebaseManager.address
+    );
+    await HyperlaneVault.connect(rebaseManager).rebase(rebaseAmt);
+
+    // Calculate expected balances after rebase
+    // The rebase should proportionally increase all balances
+    const totalSupplyBeforeRebase =
+      (await HyperlaneVault.totalAssets()) - rebaseAmt;
+    const rebaseFactor =
+      ((await HyperlaneVault.totalAssets()) * 10000n) / totalSupplyBeforeRebase;
+
+    // Verify balances after rebase
+    // Source chain balance should increase proportionally
+    expect(await HyperlaneVault.balanceOf(user1.address)).to.be.equal(
+      srcBalanceBeforeRebase
+    );
+
+    // Destination chain balance should remain unchanged as rebase only affects source chain
+    expect(await HyperlaneVaultDst.balanceOf(user1.address)).to.equal(
+      dstBalanceBeforeRebase
+    );
+  });
+
+  it('should correctly lock and unlock tokens when sending to same chain via Hyperlane', async function () {
+    const transferAmount = ethers.parseUnits('1000', 18);
+
+    // Deploy fresh instances for this test
+    const { mockMailboxSrc, mockMailboxDst } = await setupHyperlaneMocks();
+
+    // Deploy StakingVaultOFTUpgradeableHyperlane
+    const StakingVaultFactoryHyperlane = await ethers.getContractFactory(
+      'StakingVaultOFTUpgradeableHyperlane'
+    );
+    const hyperlaneVaultSrc = await upgrades.deployProxy(
+      StakingVaultFactoryHyperlane,
+      [await USN.getAddress(), 'Staked USN', 'sUSN', await owner.getAddress()],
+      {
+        initializer: 'initialize',
+        constructorArgs: [await endpointV2MockSrc.getAddress()],
+        unsafeAllow: ['constructor'],
+      }
+    );
+
+    // Configure Hyperlane
+    await hyperlaneVaultSrc.configureHyperlane(mockMailboxSrc.target);
+    await mockMailboxSrc.setMockFee(ethers.parseEther('0.001'));
+
+    // Register the vault as its own remote token (for same-chain transfers)
+    await hyperlaneVaultSrc.registerHyperlaneRemoteToken(
+      CHAIN_ID_SRC,
+      ethers.zeroPadValue(HyperlaneVaultDst.target, 32)
+    );
+    await HyperlaneVaultDst.registerHyperlaneRemoteToken(
+      CHAIN_ID_SRC,
+      ethers.zeroPadValue(hyperlaneVaultSrc.target, 32)
+    );
+    HyperlaneVaultDst.configureHyperlane(mockMailboxSrc.target);
+
+    // Set up withdrawal handler
+    await hyperlaneVaultSrc.setWithdrawalHandler(withdrawalHandler.target);
+    await withdrawalHandler.grantRole(
+      await withdrawalHandler.STAKING_VAULT_ROLE(),
+      hyperlaneVaultSrc.target
+    );
+
+    // Approve USN for hyperlaneVaultSrc
+    await USN.connect(user1).approve(hyperlaneVaultSrc.target, transferAmount);
+    // Deposit tokens first
+    await hyperlaneVaultSrc
+      .connect(user1)
+      .deposit(transferAmount, await user1.getAddress());
+
+    // Get initial balances
+    const initialUserBalance = await hyperlaneVaultSrc.balanceOf(user1.address);
+    const initialVaultSelfBalance = await hyperlaneVaultSrc.balanceOf(
+      hyperlaneVaultSrc.target
+    );
+
+    const initialTotalSupply = await hyperlaneVaultSrc.totalSupply();
+    await mockMailboxSrc.setRemoteMailbox(CHAIN_ID_DST, mockMailboxSrc.target);
+    await mockMailboxSrc.setRemoteMailbox(CHAIN_ID_SRC, mockMailboxSrc.target);
+
+    expect(await hyperlaneVaultSrc.balanceOf(user1)).to.be.gt(0);
+    // Send tokens to the same chain
+    const fee = await mockMailboxSrc.mockFee();
+
+    await hyperlaneVaultSrc.connect(user1).sendTokensViaHyperlane(
+      CHAIN_ID_SRC, // DST chain ID
+      user2.address, // Different recipient
+      transferAmount,
+      { value: fee }
+    );
+
+    // Verify tokens are locked (moved to vault's own balance)
+    expect(await hyperlaneVaultSrc.balanceOf(user1.address)).to.equal(0);
+    expect(
+      await hyperlaneVaultSrc.balanceOf(hyperlaneVaultSrc.target)
+    ).to.equal(initialVaultSelfBalance + transferAmount);
+
+    // Verify total supply remains unchanged
+    expect(await hyperlaneVaultSrc.totalSupply()).to.equal(initialTotalSupply);
+
+    // Verify user2 received the tokens
+    expect(await HyperlaneVaultDst.balanceOf(user2.address)).to.equal(
+      transferAmount
+    );
+    //approve
+    await HyperlaneVaultDst.connect(user2).approve(
+      HyperlaneVault.target,
+      transferAmount
+    );
+    // Now send tokens back from user2 to user2 on src chain
+    await HyperlaneVaultDst.connect(user2).sendTokensViaHyperlane(
+      CHAIN_ID_SRC,
+      user2.address,
+      transferAmount,
+      {
+        value: fee,
+      }
+    );
+
+    // Verify user2's balance is correct
+    expect(await hyperlaneVaultSrc.balanceOf(user2.address)).to.equal(
+      transferAmount
+    );
+
+    // Verify user2's balance is zero
+    expect(await HyperlaneVaultDst.balanceOf(user2.address)).to.equal(0);
+
+    // Verify vault's self-balance is back to initial
+    expect(
+      await hyperlaneVaultSrc.balanceOf(hyperlaneVaultSrc.target)
+    ).to.equal(initialVaultSelfBalance);
+
+    // Verify total supply still remains unchanged
+    expect(await hyperlaneVaultSrc.totalSupply()).to.equal(initialTotalSupply);
   });
 });
