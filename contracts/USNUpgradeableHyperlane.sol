@@ -1,22 +1,30 @@
 // SPDX-License-Identifier: MIT
+
 pragma solidity 0.8.28;
 
+import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import "./lzv2-upgradeable/oft-upgradeable/OFTUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "./interfaces/IStakedUSNBasicOFTHyperlane.sol";
+import "./interfaces/IUSN.sol";
 import "@hyperlane-xyz/core/contracts/interfaces/IMailbox.sol";
 import "@hyperlane-xyz/core/contracts/interfaces/IInterchainSecurityModule.sol";
 import "@hyperlane-xyz/core/contracts/interfaces/IMessageRecipient.sol";
 
-contract StakedUSNBasicOFTHyperlane is
+contract USNUpgradeableHyperlane is
+    Initializable,
+    IUSN,
     OFTUpgradeable,
-    AccessControlUpgradeable,
-    IStakedUSNBasicOFTHyperlane,
+    Ownable2StepUpgradeable,
+    ERC20BurnableUpgradeable,
+    ERC20PermitUpgradeable,
     IMessageRecipient
 {
-    bytes32 public constant BLACKLIST_MANAGER_ROLE = keccak256("BLACKLIST_MANAGER_ROLE");
+    address public admin;
+    bool public permissionless;
     mapping(address => bool) public blacklist;
+    mapping(address => bool) public whitelistedAddresses;
 
     // Hyperlane storage
     IMailbox public mailbox;
@@ -24,28 +32,45 @@ contract StakedUSNBasicOFTHyperlane is
     mapping(uint32 => bytes32) public remoteTokens;
     bool public hyperlaneEnabled;
 
+    event WhitelistAdded(address indexed account);
+    event WhitelistRemoved(address indexed account);
+    event PermissionlessEnabled();
+    event HyperlaneConfigured(address indexed mailbox);
+    event RemoteTokenSet(uint32 indexed domain, bytes32 indexed remoteToken);
+    event HyperlaneTransfer(uint32 indexed origin, bytes32 indexed sender, uint256 amount, bool isSending);
+
+    error NotWhitelisted(address from, address to);
+    error HyperlaneNotEnabled();
+    error InvalidAmount();
+    error RemoteTokenNotRegistered();
+    error InsufficientInterchainFee();
+    error InvalidRemoteToken();
+    error InvalidRecipient();
+    error OnlyMailboxAllowed();
+
     constructor(address _lzEndpoint) OFTUpgradeable(_lzEndpoint) {}
 
-    function initialize(string memory _name, string memory _symbol, address _owner) public initializer {
-        __OFT_init(_name, _symbol, _owner);
+    function initialize(string memory name, string memory symbol, address _owner) public initializer {
         __Ownable_init(_owner);
-        _grantRole(DEFAULT_ADMIN_ROLE, _owner);
-        _grantRole(BLACKLIST_MANAGER_ROLE, _owner);
+        __ERC20Burnable_init();
+        __ERC20Permit_init(name);
+        __OFT_init(name, symbol, _owner);
+        __Ownable2Step_init();
     }
 
     // Setup Hyperlane integration
-    function configureHyperlane(address _mailbox) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function configureHyperlane(address _mailbox) external onlyOwner {
         mailbox = IMailbox(_mailbox);
         hyperlaneEnabled = true;
         emit HyperlaneConfigured(_mailbox);
     }
 
-    function configureISM(address _ism) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function configureISM(address _ism) external onlyOwner {
         _interchainSecurityModule = IInterchainSecurityModule(_ism);
     }
 
     // Register a remote Hyperlane token contract
-    function registerHyperlaneRemoteToken(uint32 _domain, bytes32 _remoteToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function registerHyperlaneRemoteToken(uint32 _domain, bytes32 _remoteToken) external onlyOwner {
         require(_remoteToken != bytes32(0), "Invalid remote token");
         remoteTokens[_domain] = _remoteToken;
         emit RemoteTokenSet(_domain, _remoteToken);
@@ -115,28 +140,64 @@ contract StakedUSNBasicOFTHyperlane is
         _;
     }
 
-    // Original functions
-    function blacklistAccount(address account) external onlyRole(BLACKLIST_MANAGER_ROLE) {
+    function setAdmin(address newAdmin) external onlyOwner {
+        if (newAdmin == address(0)) revert ZeroAddress();
+        address oldAdmin = admin;
+        admin = newAdmin;
+        emit AdminChanged(oldAdmin, newAdmin);
+    }
+
+    function mint(address to, uint256 amount) external {
+        if (msg.sender != admin) revert OnlyAdminCanMint();
+        _mint(to, amount);
+    }
+
+    function blacklistAccount(address account) external onlyOwner {
         blacklist[account] = true;
         emit Blacklisted(account);
     }
 
-    function unblacklistAccount(address account) external onlyRole(BLACKLIST_MANAGER_ROLE) {
+    function unblacklistAccount(address account) external onlyOwner {
         blacklist[account] = false;
         emit Unblacklisted(account);
     }
 
-    function _update(address from, address to, uint256 amount) internal virtual override {
+    function addToWhitelist(address _address) external onlyOwner {
+        whitelistedAddresses[_address] = true;
+        emit WhitelistAdded(_address);
+    }
+
+    function removeFromWhitelist(address _address) external onlyOwner {
+        whitelistedAddresses[_address] = false;
+        emit WhitelistRemoved(_address);
+    }
+
+    function enablePermissionless() external onlyOwner {
+        permissionless = true;
+        emit PermissionlessEnabled();
+    }
+
+    function isWhitelisted(address _address) public view returns (bool) {
+        return whitelistedAddresses[_address];
+    }
+
+    function _update(address from, address to, uint256 amount) internal virtual override(ERC20Upgradeable) {
         if (blacklist[from] || blacklist[to]) revert BlacklistedAddress();
+        if (!permissionless && (!isWhitelisted(from) || !isWhitelisted(to))) revert NotWhitelisted(from, to);
         super._update(from, to, amount);
     }
 
-    // Override required functions to resolve conflicts
-    function _msgSender() internal view virtual override returns (address) {
-        return super._msgSender();
+    // Update the transferOwnership function
+    function transferOwnership(
+        address newOwner
+    ) public virtual override(OwnableUpgradeable, Ownable2StepUpgradeable) onlyOwner {
+        Ownable2StepUpgradeable.transferOwnership(newOwner);
     }
 
-    function _msgData() internal view virtual override returns (bytes calldata) {
-        return super._msgData();
+    // Update the _transferOwnership function
+    function _transferOwnership(
+        address newOwner
+    ) internal virtual override(OwnableUpgradeable, Ownable2StepUpgradeable) {
+        Ownable2StepUpgradeable._transferOwnership(newOwner);
     }
 }

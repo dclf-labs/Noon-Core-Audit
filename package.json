@@ -54,6 +54,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@hyperlane-xyz/core": "3.7.0",
     "@layerzerolabs/devtools": "^0.3.26",
     "@layerzerolabs/devtools-evm": "~0.4.2",
     "@layerzerolabs/devtools-evm-hardhat": "^1.2.1",
@@ -71,7 +72,7 @@
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.9",
     "@nomiclabs/hardhat-ethers": "^2.2.3",
-    "@openzeppelin/contracts": "^5.0.2",
+    "@openzeppelin/contracts": "^5.2.0",
     "@openzeppelin/contracts-upgradeable": "^5.0.2",
     "@openzeppelin/hardhat-upgrades": "^3.4.0",
     "ethers": "^6.13.3",
