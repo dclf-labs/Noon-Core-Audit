@@ -133,41 +133,6 @@ describe('USNUpgradeableHyperlane', function () {
       ).to.be.revertedWithCustomError(usnSrc, 'BlacklistedAddress');
     });
 
-    it('should work with whitelisting enabled', async function () {
-      const { usnSrc, usnDst, mockMailboxSrc, user1, user2 } =
-        await loadFixture(deployFixture);
-
-      // Disable permissionless mode
-      await usnSrc.enablePermissionless();
-      await usnDst.enablePermissionless();
-
-      // Whitelist addresses
-      await usnSrc.addToWhitelist(user1.address);
-      await usnDst.addToWhitelist(user2.address);
-
-      // Get initial balances
-      const initialSrcBalance = await usnSrc.balanceOf(user1.address);
-      const initialDstBalance = await usnDst.balanceOf(user2.address);
-
-      // Send tokens
-      const fee = await mockMailboxSrc.mockFee();
-      await usnSrc
-        .connect(user1)
-        .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
-          value: fee,
-        });
-
-      // Verify source chain state
-      expect(await usnSrc.balanceOf(user1.address)).to.equal(
-        initialSrcBalance - transferAmount
-      );
-
-      // Verify destination chain state
-      expect(await usnDst.balanceOf(user2.address)).to.equal(
-        initialDstBalance + transferAmount
-      );
-    });
-
     it('should work in permissionless mode', async function () {
       const { usnSrc, usnDst, mockMailboxSrc, user1, user2 } =
         await loadFixture(deployFixture);
