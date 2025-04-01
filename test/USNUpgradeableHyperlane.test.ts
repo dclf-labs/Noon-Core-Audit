@@ -133,6 +133,27 @@ describe('USNUpgradeableHyperlane', function () {
       ).to.be.revertedWithCustomError(usnSrc, 'BlacklistedAddress');
     });
 
+    it('should prevent sending tokens to blacklisted address via Hyperlane', async function () {
+      const { usnSrc, usnDst, user1, user2 } = await loadFixture(deployFixture);
+
+      // Blacklist recipient on both chains
+      await usnSrc.blacklistAccount(user2.address);
+      await usnDst.blacklistAccount(user2.address);
+
+      // Attempt transfer to blacklisted address
+      const fee = await mockMailboxSrc.mockFee();
+      await expect(
+        usnSrc
+          .connect(user1)
+          .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
+            value: fee,
+          })
+      ).to.be.revertedWithCustomError(usnSrc, 'BlacklistedAddress');
+
+      // Verify sender's balance remains unchanged
+      expect(await usnSrc.balanceOf(user1.address)).to.equal(initialMint);
+    });
+
     it('should work in permissionless mode', async function () {
       const { usnSrc, usnDst, mockMailboxSrc, user1, user2 } =
         await loadFixture(deployFixture);
