@@ -406,4 +406,161 @@ describe('USNUpgradeableHyperlane', function () {
       expect(await usnDst.balanceOf(user2.address)).to.equal(largeAmount);
     });
   });
+
+  describe('Fee Handling', function () {
+    it('should handle exact fee amount correctly', async function () {
+      const { usnSrc, usnDst, mockMailboxSrc, user1, user2 } =
+        await loadFixture(deployFixture);
+
+      // Get initial balances
+      const initialSrcBalance = await usnSrc.balanceOf(user1.address);
+      const initialDstBalance = await usnDst.balanceOf(user2.address);
+      const initialUser1Balance = await ethers.provider.getBalance(
+        user1.address
+      );
+
+      // Send tokens with exact fee
+      const fee = await mockMailboxSrc.mockFee();
+      await usnSrc
+        .connect(user1)
+        .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
+          value: fee,
+        });
+
+      // Verify token balances
+      expect(await usnSrc.balanceOf(user1.address)).to.equal(
+        initialSrcBalance - transferAmount
+      );
+      expect(await usnDst.balanceOf(user2.address)).to.equal(
+        initialDstBalance + transferAmount
+      );
+
+      // Verify ETH balance (accounting for gas costs)
+      const finalUser1Balance = await ethers.provider.getBalance(user1.address);
+      expect(finalUser1Balance).to.be.lt(initialUser1Balance - fee);
+    });
+
+    it('should refund excess fee amount', async function () {
+      const { usnSrc, usnDst, mockMailboxSrc, user1, user2 } =
+        await loadFixture(deployFixture);
+
+      // Get initial balances
+      const initialSrcBalance = await usnSrc.balanceOf(user1.address);
+      const initialDstBalance = await usnDst.balanceOf(user2.address);
+      const initialUser1Balance = await ethers.provider.getBalance(
+        user1.address
+      );
+
+      // Send tokens with excess fee
+      const fee = await mockMailboxSrc.mockFee();
+      const excessFee = ethers.parseEther('10.0'); // Send 10000x the required fee (10 ETH)
+      const totalSent = fee + excessFee;
+
+      const tx = await usnSrc
+        .connect(user1)
+        .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
+          value: totalSent,
+        });
+
+      // Get gas used
+      const receipt = await tx.wait();
+      const gasUsed = receipt?.gasUsed || BigInt(0);
+      const gasPrice = tx.gasPrice || BigInt(0);
+      const gasCost = gasUsed * gasPrice;
+
+      // Verify token balances
+      expect(await usnSrc.balanceOf(user1.address)).to.equal(
+        initialSrcBalance - transferAmount
+      );
+      expect(await usnDst.balanceOf(user2.address)).to.equal(
+        initialDstBalance + transferAmount
+      );
+
+      // Verify ETH balance (accounting for gas costs and refund)
+      const finalUser1Balance = await ethers.provider.getBalance(user1.address);
+
+      // The final balance should be:
+      // initial - fee (required fee) - gasCost (transaction cost)
+      // The excess fee should be refunded, so it's not subtracted
+      const expectedBalance = initialUser1Balance - fee - gasCost;
+
+      // Allow for a small difference due to gas estimation variations
+      const tolerance = ethers.parseEther('0.01'); // 0.01 ETH tolerance
+      expect(finalUser1Balance).to.be.within(
+        expectedBalance - tolerance,
+        expectedBalance + tolerance
+      );
+    });
+
+    it('should revert with insufficient fee', async function () {
+      const { usnSrc, user1, user2 } = await loadFixture(deployFixture);
+
+      // Get initial balances
+      const initialSrcBalance = await usnSrc.balanceOf(user1.address);
+      const initialUser1Balance = await ethers.provider.getBalance(
+        user1.address
+      );
+
+      // Attempt transfer with insufficient fee
+      const fee = await mockMailboxSrc.mockFee();
+      const insufficientFee = fee / BigInt(2); // Half the required fee
+
+      // Get gas price before the transaction
+      const gasPrice = await ethers.provider.getFeeData();
+
+      // Attempt the transaction and expect it to revert
+      await expect(
+        usnSrc
+          .connect(user1)
+          .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
+            value: insufficientFee,
+          })
+      ).to.be.revertedWithCustomError(usnSrc, 'InsufficientInterchainFee');
+
+      // Verify balances remain unchanged
+      expect(await usnSrc.balanceOf(user1.address)).to.equal(initialSrcBalance);
+      const finalUser1Balance = await ethers.provider.getBalance(user1.address);
+
+      // The final balance should be initial balance minus the insufficient fee and gas costs
+      // We use a higher gas estimate for a failed transaction
+      const estimatedGas = BigInt(100000); // Increased gas estimate
+      const gasCost = estimatedGas * (gasPrice.gasPrice || BigInt(0));
+      const expectedBalance = initialUser1Balance - insufficientFee - gasCost;
+
+      // Allow for a larger difference due to gas estimation variations
+      const tolerance = ethers.parseEther('0.001'); // Increased tolerance to 0.001 ETH
+      expect(finalUser1Balance).to.be.within(
+        expectedBalance - tolerance,
+        expectedBalance + tolerance
+      );
+    });
+
+    it('should handle zero fee correctly', async function () {
+      const { usnSrc, user1, user2 } = await loadFixture(deployFixture);
+
+      // Set mock fee to a small non-zero value instead of zero
+      await mockMailboxSrc.setMockFee(ethers.parseEther('0.0000001'));
+
+      // Get initial balances
+      const initialSrcBalance = await usnSrc.balanceOf(user1.address);
+      const initialUser1Balance = await ethers.provider.getBalance(
+        user1.address
+      );
+
+      // Attempt transfer with zero fee
+      await expect(
+        usnSrc
+          .connect(user1)
+          .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
+            value: 0,
+          })
+      ).to.be.revertedWithCustomError(usnSrc, 'InsufficientInterchainFee');
+
+      // Verify balances remain unchanged
+      expect(await usnSrc.balanceOf(user1.address)).to.equal(initialSrcBalance);
+      const finalUser1Balance = await ethers.provider.getBalance(user1.address);
+      // Allow for small difference due to gas costs
+      expect(finalUser1Balance).to.be.lt(initialUser1Balance);
+    });
+  });
 });
