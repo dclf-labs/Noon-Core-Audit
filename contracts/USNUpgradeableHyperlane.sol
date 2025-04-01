@@ -90,12 +90,17 @@ contract USNUpgradeableHyperlane is
         // Encode message with recipient and amount
         bytes memory messageBody = abi.encode(_recipient, _amount);
 
-        // Quote dispatch fee
+        // Fee handling with refund
         uint256 requiredFee = mailbox.quoteDispatch(_destinationDomain, remoteToken, messageBody);
         if (msg.value < requiredFee) revert InsufficientInterchainFee();
-
-        // Dispatch message without storing ID
-        mailbox.dispatch{ value: msg.value }(_destinationDomain, remoteToken, messageBody);
+        uint256 excessFee = msg.value - requiredFee;
+        // Send only the required fee amount
+        mailbox.dispatch{ value: requiredFee }(_destinationDomain, remoteToken, messageBody);
+        // Refund excess ETH if any
+        if (excessFee > 0) {
+            (bool success, ) = msg.sender.call{ value: excessFee }("");
+            require(success, "ETH refund failed");
+        }
 
         emit HyperlaneTransfer(
             _destinationDomain,

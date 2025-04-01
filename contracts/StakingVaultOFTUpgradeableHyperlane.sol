@@ -279,6 +279,9 @@ contract StakingVaultOFTUpgradeableHyperlane is
     function sendTokensViaHyperlane(uint32 _destinationDomain, address _recipient, uint256 _amount) external payable {
         if (!hyperlaneEnabled) revert HyperlaneNotEnabled();
         if (_amount == 0) revert InvalidAmount();
+        if (_recipient == address(0)) revert InvalidRecipient();
+        StakingVaultStorage storage s = getStakingVaultStorage();
+        if (s.blacklist[_recipient]) revert BlacklistedAddress();
 
         bytes32 remoteToken = remoteTokens[_destinationDomain];
         if (remoteToken == bytes32(0)) revert RemoteTokenNotRegistered();
@@ -289,12 +292,19 @@ contract StakingVaultOFTUpgradeableHyperlane is
         // Encode message with recipient and amount
         bytes memory messageBody = abi.encode(_recipient, _amount);
 
-        // Quote dispatch fee
+        // Fee handling with refund
         uint256 requiredFee = mailbox.quoteDispatch(_destinationDomain, remoteToken, messageBody);
         if (msg.value < requiredFee) revert InsufficientInterchainFee();
+        uint256 excessFee = msg.value - requiredFee;
 
-        // Dispatch message without storing ID
-        mailbox.dispatch{ value: msg.value }(_destinationDomain, remoteToken, messageBody);
+        // Send only the required fee amount
+        mailbox.dispatch{ value: requiredFee }(_destinationDomain, remoteToken, messageBody);
+
+        // Refund excess ETH if any
+        if (excessFee > 0) {
+            (bool success, ) = msg.sender.call{ value: excessFee }("");
+            require(success, "ETH refund failed");
+        }
 
         emit HyperlaneTransfer(
             _destinationDomain,
