@@ -80,7 +80,7 @@ contract USNUpgradeableHyperlane is
     function sendTokensViaHyperlane(uint32 _destinationDomain, address _recipient, uint256 _amount) external payable {
         if (!hyperlaneEnabled) revert HyperlaneNotEnabled();
         if (_amount == 0) revert InvalidAmount();
-
+        if (_recipient == address(0)) revert InvalidRecipient();
         bytes32 remoteToken = remoteTokens[_destinationDomain];
         if (remoteToken == bytes32(0)) revert RemoteTokenNotRegistered();
 
@@ -123,7 +123,6 @@ contract USNUpgradeableHyperlane is
 
         if (recipient == address(0)) revert InvalidRecipient();
 
-        // Mint tokens directly without message ID checking
         _mint(recipient, amount);
 
         emit HyperlaneTransfer(
