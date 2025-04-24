@@ -25,6 +25,8 @@ interface IStakingVaultUpgradeableHyperlane is IERC20 {
     );
     event RemoteTokenSet(uint32 indexed domain, bytes32 indexed remoteToken);
     event HyperlaneConfigured(address mailbox);
+    event Whitelisted(address indexed account);
+    event Unwhitelisted(address indexed account);
 
     // Custom errors
     error AssetTransferFailed();
