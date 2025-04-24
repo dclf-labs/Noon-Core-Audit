@@ -2414,22 +2414,85 @@ describe('USNStakingVault', function () {
   it('should allow whitelisting and unwhitelisting accounts', async function () {
     // Whitelist user1
     await HyperlaneVault.connect(owner).whitelistAccount(user1.address);
-
-    // Verify whitelist status
-    const isWhitelisted = await HyperlaneVault.isWhitelisted(user1.address);
-    expect(isWhitelisted).to.be.true;
+    expect(await HyperlaneVault.isWhitelisted(user1.address)).to.be.true;
 
     // Unwhitelist user1
     await HyperlaneVault.connect(owner).unwhitelistAccount(user1.address);
-
-    // Verify unwhitelist status
-    const isStillWhitelisted = await HyperlaneVault.isWhitelisted(
-      user1.address
-    );
-    expect(isStillWhitelisted).to.be.false;
+    expect(await HyperlaneVault.isWhitelisted(user1.address)).to.be.false;
   });
 
-  it('should not allow non-admin to whitelist accounts', async function () {
+  it('should allow whitelisted accounts to withdraw directly', async function () {
+    const depositAmount = ethers.parseEther('100');
+    const withdrawAmount = ethers.parseEther('50');
+
+    // Deposit tokens
+    await USN.connect(user1).approve(HyperlaneVault.target, depositAmount);
+    await HyperlaneVault.connect(user1).deposit(depositAmount, user1.address);
+
+    // Whitelist user1
+    await HyperlaneVault.connect(owner).whitelistAccount(user1.address);
+
+    // Attempt direct withdrawal (should succeed)
+    const initialBalance = await USN.balanceOf(user1.address);
+    await HyperlaneVault.connect(user1).withdraw(
+      withdrawAmount,
+      user1.address,
+      user1.address
+    );
+    const finalBalance = await USN.balanceOf(user1.address);
+    expect(finalBalance - initialBalance).to.equal(withdrawAmount);
+  });
+
+  it('should prevent whitelisted accounts from using withdrawal handler', async function () {
+    const depositAmount = ethers.parseEther('100');
+    const withdrawAmount = ethers.parseEther('50');
+
+    // Deposit tokens
+    await USN.connect(user1).approve(HyperlaneVault.target, depositAmount);
+    await HyperlaneVault.connect(user1).deposit(depositAmount, user1.address);
+
+    // Whitelist user1
+    await HyperlaneVault.connect(owner).whitelistAccount(user1.address);
+
+    // Attempt withdrawal through handler (should fail)
+    await expect(
+      HyperlaneVault.connect(user1).withdraw(
+        withdrawAmount,
+        withdrawalHandler.target,
+        user1.address
+      )
+    ).to.be.revertedWithCustomError(HyperlaneVault, 'Unauthorized');
+  });
+
+  it('should require non-whitelisted accounts to use withdrawal handler', async function () {
+    const depositAmount = ethers.parseEther('100');
+    const withdrawAmount = ethers.parseEther('50');
+
+    // Deposit tokens
+    await USN.connect(user1).approve(HyperlaneVault.target, depositAmount);
+    await HyperlaneVault.connect(user1).deposit(depositAmount, user1.address);
+
+    // Ensure user1 is not whitelisted
+    await HyperlaneVault.connect(owner).unwhitelistAccount(user1.address);
+
+    // Attempt direct withdrawal (should fail)
+    await expect(
+      HyperlaneVault.connect(user1).withdraw(
+        withdrawAmount,
+        user1.address,
+        user1.address
+      )
+    ).to.be.revertedWithCustomError(HyperlaneVault, 'Unauthorized');
+
+    // Attempt withdrawal through handler (should succeed)
+    await HyperlaneVault.connect(user1).withdraw(
+      withdrawAmount,
+      withdrawalHandler.target,
+      user1.address
+    );
+  });
+
+  it('should prevent non-admin from whitelisting accounts', async function () {
     await expect(
       HyperlaneVault.connect(user1).whitelistAccount(user2.address)
     ).to.be.revertedWithCustomError(
@@ -2438,46 +2501,16 @@ describe('USNStakingVault', function () {
     );
   });
 
-  it('should not allow non-admin to unwhitelist accounts', async function () {
-    // First whitelist the account as admin
+  it('should prevent non-admin from unwhitelisting accounts', async function () {
+    // First whitelist the account
     await HyperlaneVault.connect(owner).whitelistAccount(user2.address);
 
-    // Try to unwhitelist as non-admin
+    // Try to unwhitelist with non-admin
     await expect(
       HyperlaneVault.connect(user1).unwhitelistAccount(user2.address)
     ).to.be.revertedWithCustomError(
       HyperlaneVault,
       'AccessControlUnauthorizedAccount'
     );
-  });
-
-  it('should allow whitelisted accounts to withdraw to any address', async function () {
-    // Setup initial deposit
-    const depositAmount = ethers.parseUnits('1000', 18);
-    await USN.setAdmin(owner.address);
-    await USN.mint(user1.address, depositAmount);
-    await USN.connect(user1).approve(
-      await HyperlaneVault.getAddress(),
-      depositAmount
-    );
-    await HyperlaneVault.connect(user1).deposit(depositAmount, user1.address);
-
-    // Whitelist user1
-    await HyperlaneVault.connect(owner).whitelistAccount(user1.address);
-
-    // Try to withdraw to user2's address - should succeed
-    const withdrawAmount = ethers.parseUnits('500', 18);
-    const initialBalance = await USN.balanceOf(user2.address);
-
-    await expect(
-      HyperlaneVault.connect(user1).withdraw(
-        withdrawAmount,
-        user2.address, // Withdraw to user2's address
-        user1.address
-      )
-    ).to.emit(HyperlaneVault, 'Withdraw');
-
-    const finalBalance = await USN.balanceOf(user2.address);
-    expect(finalBalance).to.equal(initialBalance + withdrawAmount);
   });
 });
