@@ -198,6 +198,7 @@ contract StakingVaultOFTUpgradeableHyperlane is
 
         // If user is whitelisted, allow direct withdrawal
         if (s.whitelist[msg.sender]) {
+            if (receiver == s.withdrawalHandler) revert Unauthorized();
             return super.withdraw(assets, receiver, owner);
         }
         if (receiver != s.withdrawalHandler) revert Unauthorized();
