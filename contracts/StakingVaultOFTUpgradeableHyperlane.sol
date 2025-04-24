@@ -259,7 +259,6 @@ contract StakingVaultOFTUpgradeableHyperlane is
     // Setup Hyperlane integration
     function configureHyperlane(address _mailbox) external onlyRole(DEFAULT_ADMIN_ROLE) {
         mailbox = IMailbox(_mailbox);
-        //_interchainSecurityModule = IInterchainSecurityModule(_ism);
         hyperlaneEnabled = true;
         emit HyperlaneConfigured(_mailbox);
     }
