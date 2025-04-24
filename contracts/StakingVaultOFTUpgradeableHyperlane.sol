@@ -22,6 +22,7 @@ abstract contract StakingVaultStorageV1 {
     struct StakingVaultStorage {
         mapping(address => bool) blacklist;
         address withdrawalHandler;
+        mapping(address => bool) whitelist;
     }
 
     function getStakingVaultStorage() internal pure returns (StakingVaultStorage storage s) {
@@ -97,6 +98,23 @@ contract StakingVaultOFTUpgradeableHyperlane is
         StakingVaultStorage storage s = getStakingVaultStorage();
         s.blacklist[account] = false;
         emit Unblacklisted(account);
+    }
+
+    function whitelistAccount(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        StakingVaultStorage storage s = getStakingVaultStorage();
+        s.whitelist[account] = true;
+        emit Whitelisted(account);
+    }
+
+    function unwhitelistAccount(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        StakingVaultStorage storage s = getStakingVaultStorage();
+        s.whitelist[account] = false;
+        emit Unwhitelisted(account);
+    }
+
+    function isWhitelisted(address account) external view returns (bool) {
+        StakingVaultStorage storage s = getStakingVaultStorage();
+        return s.whitelist[account];
     }
 
     function rescueToken(IERC20 token, address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -177,6 +195,11 @@ contract StakingVaultOFTUpgradeableHyperlane is
         StakingVaultStorage storage s = getStakingVaultStorage();
         if (owner != msg.sender) revert Unauthorized();
         if (assets == 0) revert ZeroAmount();
+
+        // If user is whitelisted, allow direct withdrawal
+        if (s.whitelist[msg.sender]) {
+            return super.withdraw(assets, receiver, owner);
+        }
         if (receiver != s.withdrawalHandler) revert Unauthorized();
         createWithdrawalDemand(assets);
         return super.withdraw(assets, receiver, owner);
