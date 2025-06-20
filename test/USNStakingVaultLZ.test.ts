@@ -1810,7 +1810,7 @@ describe('USNStakingVault', function () {
     const fee = await mockMailboxSrc.mockFee();
     await HyperlaneVault.connect(user1).sendTokensViaHyperlane(
       CHAIN_ID_DST,
-      user1.address,
+      ethers.zeroPadValue(user1.address, 32),
       transferAmount,
       { value: fee }
     );
@@ -1839,7 +1839,7 @@ describe('USNStakingVault', function () {
     await expect(
       HyperlaneVault.connect(user1).sendTokensViaHyperlane(
         CHAIN_ID_DST,
-        user1.address,
+        ethers.zeroPadValue(user1.address, 32),
         transferAmount,
         { value: 0 }
       )
@@ -1914,7 +1914,7 @@ describe('USNStakingVault', function () {
 
     await UpgradedVault.connect(user1).sendTokensViaHyperlane(
       CHAIN_ID_DST,
-      user1.address,
+      ethers.zeroPadValue(user1.address, 32),
       transferAmount,
       { value: fee }
     );
@@ -2017,9 +2017,14 @@ describe('USNStakingVault', function () {
     await mockMailboxDst.setRemoteMailbox(CHAIN_ID_SRC, mockMailboxDst.target);
     await hyperlaneVaultSrc
       .connect(user1)
-      .sendTokensViaHyperlane(CHAIN_ID_DST, user1.address, transferAmount, {
-        value: fee,
-      });
+      .sendTokensViaHyperlane(
+        CHAIN_ID_DST,
+        ethers.zeroPadValue(user1.address, 32),
+        transferAmount,
+        {
+          value: fee,
+        }
+      );
 
     // Manually process the message on the destination chain
     // This simulates what would happen in a real cross-chain scenario
@@ -2084,7 +2089,7 @@ describe('USNStakingVault', function () {
     const fee = await mockMailboxSrc.mockFee();
     await HyperlaneVault.connect(user1).sendTokensViaHyperlane(
       CHAIN_ID_DST,
-      user1.address,
+      ethers.zeroPadValue(user1.address, 32),
       transferAmount,
       { value: fee }
     );
@@ -2107,7 +2112,7 @@ describe('USNStakingVault', function () {
     );
     await HyperlaneVaultDst.connect(user1).sendTokensViaHyperlane(
       CHAIN_ID_SRC,
-      user1.address,
+      ethers.zeroPadValue(user1.address, 32),
       transferAmount,
       { value: feeDst }
     );
@@ -2154,7 +2159,7 @@ describe('USNStakingVault', function () {
     await expect(
       HyperlaneVault.connect(user1).sendTokensViaHyperlane(
         CHAIN_ID_DST,
-        user1.address,
+        ethers.zeroPadValue(user1.address, 32),
         transferAmount,
         { value: fee }
       )
@@ -2183,7 +2188,7 @@ describe('USNStakingVault', function () {
 
     await HyperlaneVault.connect(user1).sendTokensViaHyperlane(
       CHAIN_ID_DST,
-      user1.address,
+      ethers.zeroPadValue(user1.address, 32),
       transferAmount,
       { value: fee }
     );
@@ -2222,7 +2227,7 @@ describe('USNStakingVault', function () {
 
     await HyperlaneVault.connect(user1).sendTokensViaHyperlane(
       CHAIN_ID_DST,
-      user1.address,
+      ethers.zeroPadValue(user1.address, 32),
       halfAmount,
       { value: fee }
     );
@@ -2331,7 +2336,7 @@ describe('USNStakingVault', function () {
 
     await hyperlaneVaultSrc.connect(user1).sendTokensViaHyperlane(
       CHAIN_ID_SRC, // DST chain ID
-      user2.address, // Different recipient
+      ethers.zeroPadValue(user2.address, 32), // Different recipient
       transferAmount,
       { value: fee }
     );
@@ -2357,7 +2362,7 @@ describe('USNStakingVault', function () {
     // Now send tokens back from user2 to user2 on src chain
     await HyperlaneVaultDst.connect(user2).sendTokensViaHyperlane(
       CHAIN_ID_SRC,
-      user2.address,
+      ethers.zeroPadValue(user2.address, 32),
       transferAmount,
       {
         value: fee,

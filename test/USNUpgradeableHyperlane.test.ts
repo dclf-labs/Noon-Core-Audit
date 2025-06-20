@@ -101,9 +101,14 @@ describe('USNUpgradeableHyperlane', function () {
       const fee = await mockMailboxSrc.mockFee();
       await usnSrc
         .connect(user1)
-        .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
-          value: fee,
-        });
+        .sendTokensViaHyperlane(
+          CHAIN_ID_SRC,
+          ethers.zeroPadValue(user2.address, 32),
+          transferAmount,
+          {
+            value: fee,
+          }
+        );
 
       // Verify source chain state
       expect(await usnSrc.balanceOf(user1.address)).to.equal(
@@ -127,9 +132,14 @@ describe('USNUpgradeableHyperlane', function () {
       await expect(
         usnSrc
           .connect(user1)
-          .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
-            value: fee,
-          })
+          .sendTokensViaHyperlane(
+            CHAIN_ID_SRC,
+            ethers.zeroPadValue(user2.address, 32),
+            transferAmount,
+            {
+              value: fee,
+            }
+          )
       ).to.be.revertedWithCustomError(usnSrc, 'BlacklistedAddress');
     });
 
@@ -145,9 +155,14 @@ describe('USNUpgradeableHyperlane', function () {
       await expect(
         usnSrc
           .connect(user1)
-          .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
-            value: fee,
-          })
+          .sendTokensViaHyperlane(
+            CHAIN_ID_SRC,
+            ethers.zeroPadValue(user2.address, 32),
+            transferAmount,
+            {
+              value: fee,
+            }
+          )
       ).to.be.revertedWithCustomError(usnSrc, 'BlacklistedAddress');
 
       // Verify sender's balance remains unchanged
@@ -170,9 +185,14 @@ describe('USNUpgradeableHyperlane', function () {
       const fee = await mockMailboxSrc.mockFee();
       await usnSrc
         .connect(user1)
-        .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
-          value: fee,
-        });
+        .sendTokensViaHyperlane(
+          CHAIN_ID_SRC,
+          ethers.zeroPadValue(user2.address, 32),
+          transferAmount,
+          {
+            value: fee,
+          }
+        );
 
       // Verify source chain state
       expect(await usnSrc.balanceOf(user1.address)).to.equal(
@@ -337,9 +357,14 @@ describe('USNUpgradeableHyperlane', function () {
       await expect(
         usnWithoutHyperlane
           .connect(user1)
-          .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
-            value: MOCK_FEE,
-          })
+          .sendTokensViaHyperlane(
+            CHAIN_ID_SRC,
+            ethers.zeroPadValue(user2.address, 32),
+            transferAmount,
+            {
+              value: MOCK_FEE,
+            }
+          )
       ).to.be.revertedWithCustomError(
         usnWithoutHyperlane,
         'HyperlaneNotEnabled'
@@ -352,9 +377,14 @@ describe('USNUpgradeableHyperlane', function () {
       await expect(
         usnSrc
           .connect(user1)
-          .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
-            value: 0,
-          })
+          .sendTokensViaHyperlane(
+            CHAIN_ID_SRC,
+            ethers.zeroPadValue(user2.address, 32),
+            transferAmount,
+            {
+              value: 0,
+            }
+          )
       ).to.be.revertedWithCustomError(usnSrc, 'InsufficientInterchainFee');
     });
   });
@@ -366,9 +396,14 @@ describe('USNUpgradeableHyperlane', function () {
       await expect(
         usnSrc
           .connect(user1)
-          .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, 0, {
-            value: MOCK_FEE,
-          })
+          .sendTokensViaHyperlane(
+            CHAIN_ID_SRC,
+            ethers.zeroPadValue(user2.address, 32),
+            0,
+            {
+              value: MOCK_FEE,
+            }
+          )
       ).to.be.revertedWithCustomError(usnSrc, 'InvalidAmount');
     });
 
@@ -380,7 +415,7 @@ describe('USNUpgradeableHyperlane', function () {
           .connect(user1)
           .sendTokensViaHyperlane(
             CHAIN_ID_SRC,
-            ethers.ZeroAddress,
+            ethers.zeroPadValue(ethers.ZeroAddress, 32),
             transferAmount,
             {
               value: MOCK_FEE,
@@ -398,9 +433,14 @@ describe('USNUpgradeableHyperlane', function () {
 
       await usnSrc
         .connect(user1)
-        .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, largeAmount, {
-          value: MOCK_FEE,
-        });
+        .sendTokensViaHyperlane(
+          CHAIN_ID_SRC,
+          ethers.zeroPadValue(user2.address, 32),
+          largeAmount,
+          {
+            value: MOCK_FEE,
+          }
+        );
 
       expect(await usnSrc.balanceOf(user1.address)).to.equal(initialMint);
       expect(await usnDst.balanceOf(user2.address)).to.equal(largeAmount);
@@ -423,9 +463,14 @@ describe('USNUpgradeableHyperlane', function () {
       const fee = await mockMailboxSrc.mockFee();
       await usnSrc
         .connect(user1)
-        .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
-          value: fee,
-        });
+        .sendTokensViaHyperlane(
+          CHAIN_ID_SRC,
+          ethers.zeroPadValue(user2.address, 32),
+          transferAmount,
+          {
+            value: fee,
+          }
+        );
 
       // Verify token balances
       expect(await usnSrc.balanceOf(user1.address)).to.equal(
@@ -458,9 +503,14 @@ describe('USNUpgradeableHyperlane', function () {
 
       const tx = await usnSrc
         .connect(user1)
-        .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
-          value: totalSent,
-        });
+        .sendTokensViaHyperlane(
+          CHAIN_ID_SRC,
+          ethers.zeroPadValue(user2.address, 32),
+          transferAmount,
+          {
+            value: totalSent,
+          }
+        );
 
       // Get gas used
       const receipt = await tx.wait();
@@ -512,9 +562,14 @@ describe('USNUpgradeableHyperlane', function () {
       await expect(
         usnSrc
           .connect(user1)
-          .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
-            value: insufficientFee,
-          })
+          .sendTokensViaHyperlane(
+            CHAIN_ID_SRC,
+            ethers.zeroPadValue(user2.address, 32),
+            transferAmount,
+            {
+              value: insufficientFee,
+            }
+          )
       ).to.be.revertedWithCustomError(usnSrc, 'InsufficientInterchainFee');
 
       // Verify balances remain unchanged
@@ -551,9 +606,14 @@ describe('USNUpgradeableHyperlane', function () {
       await expect(
         usnSrc
           .connect(user1)
-          .sendTokensViaHyperlane(CHAIN_ID_SRC, user2.address, transferAmount, {
-            value: 0,
-          })
+          .sendTokensViaHyperlane(
+            CHAIN_ID_SRC,
+            ethers.zeroPadValue(user2.address, 32),
+            transferAmount,
+            {
+              value: 0,
+            }
+          )
       ).to.be.revertedWithCustomError(usnSrc, 'InsufficientInterchainFee');
 
       // Verify balances remain unchanged
