@@ -303,7 +303,6 @@ contract StakingVaultOFTUpgradeableHyperlane is
         if (!hyperlaneEnabled) revert HyperlaneNotEnabled();
         if (_amount == 0) revert InvalidAmount();
         if (_recipient == bytes32(0)) revert InvalidRecipient();
-        StakingVaultStorage storage s = getStakingVaultStorage();
 
         bytes32 remoteToken = remoteTokens[_destinationDomain];
         if (remoteToken == bytes32(0)) revert RemoteTokenNotRegistered();
