@@ -299,12 +299,10 @@ contract StakingVaultOFTUpgradeableHyperlane is
     }
 
     // Send tokens via Hyperlane
-    function sendTokensViaHyperlane(uint32 _destinationDomain, address _recipient, uint256 _amount) external payable {
+    function sendTokensViaHyperlane(uint32 _destinationDomain, bytes32 _recipient, uint256 _amount) external payable {
         if (!hyperlaneEnabled) revert HyperlaneNotEnabled();
         if (_amount == 0) revert InvalidAmount();
-        if (_recipient == address(0)) revert InvalidRecipient();
-        StakingVaultStorage storage s = getStakingVaultStorage();
-        if (s.blacklist[_recipient]) revert BlacklistedAddress();
+        if (_recipient == bytes32(0)) revert InvalidRecipient();
 
         bytes32 remoteToken = remoteTokens[_destinationDomain];
         if (remoteToken == bytes32(0)) revert RemoteTokenNotRegistered();
@@ -331,7 +329,7 @@ contract StakingVaultOFTUpgradeableHyperlane is
 
         emit HyperlaneTransfer(
             _destinationDomain,
-            bytes32(uint256(uint160(_recipient))),
+            _recipient,
             _amount,
             true // isSending = true
         );
@@ -345,8 +343,10 @@ contract StakingVaultOFTUpgradeableHyperlane is
         bytes32 expectedToken = remoteTokens[_origin];
         if (_sender != expectedToken) revert InvalidRemoteToken();
 
-        // Decode message
-        (address recipient, uint256 amount) = abi.decode(_message, (address, uint256));
+        // Decode message - first 32 bytes for recipient (bytes32), next 32 bytes for amount
+        bytes32 recipientBytes32 = bytes32(_message[:32]);
+        uint256 amount = uint256(bytes32(_message[32:64]));
+        address recipient = address(uint160(uint256(recipientBytes32)));
 
         if (recipient == address(0)) revert InvalidRecipient();
 

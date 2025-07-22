@@ -51,16 +51,16 @@ jobs:
           node-version: ${{ matrix.node }}
 
       - name: Install dependencies with dev deps
-        run: npm install
+        run: yarn install
 
       - name: Hardhat compile
-        run: npx hardhat compile --force
+        run: yarn hardhat compile --force
 
       - name: Tests
-        run: npx hardhat test --no-compile
+        run: yarn hardhat test --no-compile
 
       - name: Linters & Formatters
-        run: npm run hook:pre-push
+        run: yarn hook:pre-push
 
       - name: Analyze to contracts
         if: steps.verify-changed-sol-files.outputs.files_changed == 'true'

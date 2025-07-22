@@ -77,10 +77,10 @@ contract USNUpgradeableHyperlane is
     }
 
     // Send tokens via Hyperlane
-    function sendTokensViaHyperlane(uint32 _destinationDomain, address _recipient, uint256 _amount) external payable {
+    function sendTokensViaHyperlane(uint32 _destinationDomain, bytes32 _recipient, uint256 _amount) external payable {
         if (!hyperlaneEnabled) revert HyperlaneNotEnabled();
         if (_amount == 0) revert InvalidAmount();
-        if (_recipient == address(0)) revert InvalidRecipient();
+        if (_recipient == bytes32(0)) revert InvalidRecipient();
         bytes32 remoteToken = remoteTokens[_destinationDomain];
         if (remoteToken == bytes32(0)) revert RemoteTokenNotRegistered();
 
@@ -88,7 +88,7 @@ contract USNUpgradeableHyperlane is
         _burn(msg.sender, _amount);
 
         // Encode message with recipient and amount
-        bytes memory messageBody = abi.encode(_recipient, _amount);
+        bytes memory messageBody = abi.encodePacked(_recipient, _amount);
 
         // Fee handling with refund
         uint256 requiredFee = mailbox.quoteDispatch(_destinationDomain, remoteToken, messageBody);
@@ -104,13 +104,19 @@ contract USNUpgradeableHyperlane is
 
         emit HyperlaneTransfer(
             _destinationDomain,
-            bytes32(uint256(uint160(_recipient))),
+            _recipient,
             _amount,
             true // isSending = true
         );
     }
 
-    // Handle incoming Hyperlane message
+    /**
+     * @dev Mints tokens to recipient when mailbox receives transfer message.
+     * @dev Emits `HyperlaneTransfer` event on the destination chain.
+     * @param _origin The identifier of the origin chain.
+     * @param _sender The sender address (remote token contract).
+     * @param _message The encoded remote transfer message containing the recipient address and amount.
+     */
     function handle(uint32 _origin, bytes32 _sender, bytes calldata _message) external payable override onlyMailbox {
         if (!hyperlaneEnabled) revert HyperlaneNotEnabled();
 
@@ -118,8 +124,12 @@ contract USNUpgradeableHyperlane is
         bytes32 expectedToken = remoteTokens[_origin];
         if (_sender != expectedToken) revert InvalidRemoteToken();
 
-        // Decode message
-        (address recipient, uint256 amount) = abi.decode(_message, (address, uint256));
+        // Decode message - first 32 bytes for recipient (bytes32), next 32 bytes for amount
+        bytes32 recipientBytes32 = bytes32(_message[:32]);
+        uint256 amount = uint256(bytes32(_message[32:64]));
+
+        // Convert bytes32 recipient to address
+        address recipient = address(uint160(uint256(recipientBytes32)));
 
         if (recipient == address(0)) revert InvalidRecipient();
 
