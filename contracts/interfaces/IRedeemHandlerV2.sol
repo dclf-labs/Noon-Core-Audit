@@ -24,6 +24,8 @@ interface IRedeemHandlerV2 {
     event OracleDataUsed(address indexed collateral, int256 price, uint256 updatedAt);
     event PegPercentageUpdated(uint256 newPegPercentage);
     event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+    event WhitelistedUserAdded(address indexed user);
+    event WhitelistedUserRemoved(address indexed user);
 
     // Custom errors
     error ZeroAddress();
@@ -44,6 +46,8 @@ interface IRedeemHandlerV2 {
     error TreasuryNotSet();
     error InsufficientTreasuryBalance(address collateral, uint256 required, uint256 available);
     error CollateralDepegged(address collateral, uint256 currentPrice, uint256 pegPrice, uint256 depegPercentage);
+    error UserNotWhitelisted(address user);
+    error UserAlreadyWhitelisted(address user);
 
     // Functions
     function addRedeemableCollateral(address collateral, address oracle, uint256 pegPrice) external;
@@ -102,4 +106,10 @@ interface IRedeemHandlerV2 {
     function getRate() external view returns (uint256);
 
     function getRate(address collateral) external view returns (uint256);
+
+    function addWhitelistedUser(address user) external;
+
+    function removeWhitelistedUser(address user) external;
+
+    function isWhitelisted(address user) external view returns (bool);
 }
