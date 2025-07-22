@@ -48,6 +48,7 @@ interface IRedeemHandlerV2 {
     error CollateralDepegged(address collateral, uint256 currentPrice, uint256 pegPrice, uint256 depegPercentage);
     error UserNotWhitelisted(address user);
     error UserAlreadyWhitelisted(address user);
+    error InvalidCollateralAmount(uint256 orderAmount, uint256 calculatedAmount);
 
     // Functions
     function addRedeemableCollateral(address collateral, address oracle, uint256 pegPrice) external;

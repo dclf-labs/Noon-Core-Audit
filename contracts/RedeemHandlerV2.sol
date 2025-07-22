@@ -176,8 +176,12 @@ contract RedeemHandlerV2 is AccessControl, EIP712, ReentrancyGuard, IRedeemHandl
         (int256 price, uint256 updatedAt) = getCollateralPrice(order.collateralAddress);
         emit OracleDataUsed(order.collateralAddress, price, updatedAt);
 
-        // Verify that the calculated amount matches the order (with some tolerance for precision)
         if (order.collateralAmount == 0) revert ZeroAmount();
+
+        // Validate that order.collateralAmount is not more advantageous than calculated amount
+        if (order.collateralAmount > calculatedCollateralAmount) {
+            revert InvalidCollateralAmount(order.collateralAmount, calculatedCollateralAmount);
+        }
 
         currentBlockRedeemAmount += order.usnAmount;
         usedNonces[order.user][order.nonce] = true;
@@ -414,7 +418,7 @@ contract RedeemHandlerV2 is AccessControl, EIP712, ReentrancyGuard, IRedeemHandl
         emit WhitelistedUserRemoved(user);
     }
 
-    function isWhitelisted(address user) public view returns (bool) {
+    function isWhitelisted(address user) public view override returns (bool) {
         return _whitelistedUsers[user];
     }
 }
