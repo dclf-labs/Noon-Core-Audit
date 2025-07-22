@@ -62,6 +62,13 @@ const config: HardhatUserConfig = {
   },
   networks: {
     hardhat: {
+      forking: {
+        url: process.env.MAINNET_RPC_URL || '',
+        blockNumber: 18500000, // or your preferred block
+      },
+      initialBaseFeePerGas: 0, // disables EIP-1559 base fee for local testing
+      gas: 12000000,
+      gasPrice: 30_000_000_000, // 30 gwei, adjust as needed
       allowUnlimitedContractSize:
         (process.env.ALLOW_UNLIMITED_CONTRACT_SIZE &&
           'true' === process.env.ALLOW_UNLIMITED_CONTRACT_SIZE.toLowerCase()) ||
