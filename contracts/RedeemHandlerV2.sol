@@ -64,6 +64,7 @@ contract RedeemHandlerV2 is AccessControl, EIP712, ReentrancyGuard, IRedeemHandl
     uint256 public lastRedeemBlock;
     uint256 public pegPercentage; // Peg percentage in basis points (10000 = 100%)
     mapping(address => mapping(uint256 => bool)) private usedNonces;
+    mapping(address => bool) private _whitelistedUsers;
 
     // Constructor
     constructor(address _usnToken) EIP712("RedeemHandlerV2", "1") {
@@ -143,6 +144,7 @@ contract RedeemHandlerV2 is AccessControl, EIP712, ReentrancyGuard, IRedeemHandl
         if (order.usnAmount == 0) revert ZeroAmount();
         if (block.timestamp > order.expiry) revert SignatureExpired();
         if (usedNonces[order.user][order.nonce]) revert InvalidNonce();
+        if (!_whitelistedUsers[order.user]) revert UserNotWhitelisted(order.user);
 
         bytes32 hash = hashOrder(order);
         if (!_isValidSignature(order.user, hash, signature)) revert InvalidSignature();
@@ -195,6 +197,7 @@ contract RedeemHandlerV2 is AccessControl, EIP712, ReentrancyGuard, IRedeemHandl
         bytes32 r,
         bytes32 s
     ) external override onlyRole(BURNER_ROLE) {
+        if (!_whitelistedUsers[order.user]) revert UserNotWhitelisted(order.user);
         bytes32 hash = hashOrder(order);
         if (!_isValidSignature(order.user, hash, signature)) revert InvalidSignature();
 
@@ -210,6 +213,7 @@ contract RedeemHandlerV2 is AccessControl, EIP712, ReentrancyGuard, IRedeemHandl
         if (!_redeemableCollaterals[collateralAddress]) revert InvalidCollateralAddress();
         if (usnAmount == 0) revert ZeroAmount();
         if (treasury == address(0)) revert TreasuryNotSet();
+        if (!_whitelistedUsers[msg.sender]) revert UserNotWhitelisted(msg.sender);
 
         // Depeg checks removed: always allow redemption, but use peg price if price < peg
 
@@ -395,5 +399,22 @@ contract RedeemHandlerV2 is AccessControl, EIP712, ReentrancyGuard, IRedeemHandl
                 return false;
             }
         }
+    }
+
+    function addWhitelistedUser(address user) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (user == address(0)) revert ZeroAddress();
+        if (_whitelistedUsers[user]) revert UserAlreadyWhitelisted(user);
+        _whitelistedUsers[user] = true;
+        emit WhitelistedUserAdded(user);
+    }
+
+    function removeWhitelistedUser(address user) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (!_whitelistedUsers[user]) revert UserNotWhitelisted(user);
+        _whitelistedUsers[user] = false;
+        emit WhitelistedUserRemoved(user);
+    }
+
+    function isWhitelisted(address user) public view returns (bool) {
+        return _whitelistedUsers[user];
     }
 }

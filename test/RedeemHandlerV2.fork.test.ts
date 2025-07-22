@@ -108,6 +108,9 @@ describe('RedeemHandlerV2 Fork Tests', function () {
       pegPrice
     );
 
+    // Whitelist user for redemption
+    await redeemHandler.addWhitelistedUser(user.address);
+
     // Transfer USDT from whale to treasury for testing
     await usdtContract
       .connect(whale)
@@ -432,6 +435,56 @@ describe('RedeemHandlerV2 Fork Tests', function () {
       await expect(
         redeemHandler.connect(user).redeemOnchain(USDT_ADDRESS, usnAmount)
       ).to.emit(redeemHandler, 'OracleDataUsed');
+    });
+  });
+
+  describe('Whitelisting', function () {
+    it('should allow admin to add and remove whitelisted user', async function () {
+      // Add
+      await expect(redeemHandler.addWhitelistedUser(owner.address))
+        .to.emit(redeemHandler, 'WhitelistedUserAdded')
+        .withArgs(owner.address);
+      expect(await redeemHandler.isWhitelisted(owner.address)).to.be.true;
+      // Remove
+      await expect(redeemHandler.removeWhitelistedUser(owner.address))
+        .to.emit(redeemHandler, 'WhitelistedUserRemoved')
+        .withArgs(owner.address);
+      expect(await redeemHandler.isWhitelisted(owner.address)).to.be.false;
+    });
+    it('should revert if non-admin tries to add or remove whitelisted user', async function () {
+      await expect(
+        redeemHandler.connect(user).addWhitelistedUser(user.address)
+      ).to.be.revertedWithCustomError(
+        redeemHandler,
+        'AccessControlUnauthorizedAccount'
+      );
+      await expect(
+        redeemHandler.connect(user).removeWhitelistedUser(user.address)
+      ).to.be.revertedWithCustomError(
+        redeemHandler,
+        'AccessControlUnauthorizedAccount'
+      );
+    });
+    it('should revert if user is not whitelisted for redemption', async function () {
+      // Remove user from whitelist
+      await redeemHandler.removeWhitelistedUser(user.address);
+      await usn
+        .connect(user)
+        .approve(await redeemHandler.getAddress(), usnAmount);
+      await expect(
+        redeemHandler.connect(user).redeemOnchain(USDT_ADDRESS, usnAmount)
+      ).to.be.revertedWithCustomError(redeemHandler, 'UserNotWhitelisted');
+    });
+    it('should revert if adding already whitelisted user', async function () {
+      await expect(
+        redeemHandler.addWhitelistedUser(user.address)
+      ).to.be.revertedWithCustomError(redeemHandler, 'UserAlreadyWhitelisted');
+    });
+    it('should revert if removing non-whitelisted user', async function () {
+      await redeemHandler.removeWhitelistedUser(user.address);
+      await expect(
+        redeemHandler.removeWhitelistedUser(user.address)
+      ).to.be.revertedWithCustomError(redeemHandler, 'UserNotWhitelisted');
     });
   });
 
