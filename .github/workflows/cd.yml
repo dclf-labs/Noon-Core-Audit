@@ -57,6 +57,9 @@ jobs:
         run: yarn hardhat compile --force
 
       - name: Tests
+        timeout-minutes: 2
+        env:
+          MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
         run: yarn hardhat test --no-compile
 
       - name: Linters & Formatters
